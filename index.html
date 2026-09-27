@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HandDraw — Рисование жестами через веб-камеру</title>
+    <meta name="description" content="Интерактивное веб-приложение для рисования жестами через веб-камеру с использованием MediaPipe Hands и Canvas API." />
+    <meta property="og:title" content="HandDraw — Рисование жестами" />
+    <meta property="og:description" content="Рисование жестами через веб-камеру с помощью MediaPipe Hands и Canvas API." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+    <!-- MediaPipe Hands CDN script (without camera_utils) -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  </head>
+  <body class="bg-zinc-950 text-zinc-100 overflow-hidden select-none font-sans">
+    <div id="app" class="relative w-screen h-screen overflow-hidden">
+      <!-- Background Video (Mirrored) -->
+      <video id="webcam-video" class="webcam-layer" autoplay playsinline muted></video>
+
+      <!-- Video Dark/Blur Filter Layer for enhanced drawing contrast -->
+      <div id="video-backdrop" class="video-backdrop-layer"></div>
+
+      <!-- Canvas for Drawings (Strokes) -->
+      <canvas id="drawing-canvas" class="canvas-layer"></canvas>
+
+      <!-- Canvas for Pointer, Gestures & Feedback -->
+      <canvas id="cursor-canvas" class="canvas-layer cursor-layer"></canvas>
+
+      <!-- Top Brand & Header -->
+      <header class="app-header">
+        <div class="header-brand">
+          <div class="logo-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m18 15-6-6-6 6"/>
+              <path d="M12 3v12"/>
+              <circle cx="12" cy="18" r="3"/>
+            </svg>
+          </div>
+          <span class="logo-text">Hand<span class="text-indigo-400">Draw</span></span>
+        </div>
+
+        <div class="header-actions">
+          <!-- Background Mode Toggle (Black Canvas / Dimmed Video / Full Video) -->
+          <button id="btn-bg-mode" class="btn-icon" title="Режим фона: 🌑 Чёрный холст / 🌓 Тёмный / ☀️ Камера">
+            <span id="bg-mode-icon">🌑</span>
+          </button>
+          <!-- Sound Effects Toggle -->
+          <button id="btn-sound-toggle" class="btn-icon active" title="Включить/выключить звуковые эффекты (Звук)">
+            <span id="sound-icon">🔊</span>
+          </button>
+          <!-- Gesture Cheatsheet Modal Toggle -->
+          <button id="btn-help-guide" class="btn-icon" title="Шпаргалка управления жестами">
+            <span class="text-sm font-bold">?</span>
+          </button>
+          <button id="btn-toggle-hud" class="btn-icon active" title="Показать/скрыть телеметрию кисти">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 20v-6M6 20V10M18 20V4"/>
+            </svg>
+          </button>
+          <button id="btn-mirror-toggle" class="btn-icon" title="Зеркальный режим камеры">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m3 7 3-3 3 3"/>
+              <path d="M6 4v16"/>
+              <path d="m21 17-3 3-3-3"/>
+              <path d="M18 20V4"/>
+            </svg>
+          </button>
+          <button id="btn-fullscreen" class="btn-icon" title="На весь экран">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3"/>
+              <path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
+              <path d="M3 16v3a2 2 0 0 0 2 2h3"/>
+              <path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Floating Toolbar -->
+      <aside id="toolbar" class="toolbar-panel">
+        <!-- Camera Toggle -->
+        <button id="btn-toggle-camera" class="tool-btn camera-btn" title="Включить или выключить камеру">
+          <svg class="camera-icon-on" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>
+            <circle cx="12" cy="13" r="3"/>
+          </svg>
+          <svg class="camera-icon-off hidden" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="2" x2="22" y1="2" y2="22"/>
+            <path d="M7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16"/>
+            <path d="M9.5 4h5L17 7h3a2 2 0 0 1 1.86 1.26"/>
+            <path d="M14.12 14.12A3 3 0 0 1 9.88 9.88"/>
+          </svg>
+          <span id="btn-camera-text">Включить камеру</span>
+        </button>
+
+        <div class="divider"></div>
+
+        <!-- Color Palette Section -->
+        <div class="tool-section colors-group">
+          <!-- Active Color Preview & Palette Toggle -->
+          <button id="btn-toggle-palette" class="tool-btn palette-toggle-btn active" title="Открыть/закрыть большую палитру (30 цветов)">
+            <span id="active-color-dot" class="color-dot w-4 h-4 rounded-full border border-white/50" style="background-color: #ffffff;"></span>
+            <span class="text-xs font-semibold">Цвета (30)</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+
+          <!-- Quick access favorites -->
+          <div class="quick-colors flex items-center gap-1">
+            <button class="color-btn active" data-color="#ffffff" title="Белый">
+              <span class="color-dot" style="background-color: #ffffff;"></span>
+            </button>
+            <button class="color-btn" data-color="#000000" title="Чёрный">
+              <span class="color-dot border border-zinc-700" style="background-color: #000000;"></span>
+            </button>
+            <button class="color-btn" data-color="#ef4444" title="Красный">
+              <span class="color-dot" style="background-color: #ef4444;"></span>
+            </button>
+            <button class="color-btn" data-color="#f97316" title="Оранжевый">
+              <span class="color-dot" style="background-color: #f97316;"></span>
+            </button>
+            <button class="color-btn" data-color="#eab308" title="Жёлтый">
+              <span class="color-dot" style="background-color: #eab308;"></span>
+            </button>
+            <button class="color-btn" data-color="#10b981" title="Зелёный">
+              <span class="color-dot" style="background-color: #10b981;"></span>
+            </button>
+            <button class="color-btn" data-color="#06b6d4" title="Бирюзовый">
+              <span class="color-dot" style="background-color: #06b6d4;"></span>
+            </button>
+            <button class="color-btn" data-color="#3b82f6" title="Синий">
+              <span class="color-dot" style="background-color: #3b82f6;"></span>
+            </button>
+            <button class="color-btn" data-color="#a855f7" title="Пурпурный">
+              <span class="color-dot" style="background-color: #a855f7;"></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Brush FX Styles (Solid, Neon Glow, Rainbow, Sparkles) -->
+        <div class="tool-section brush-styles-group">
+          <button id="btn-style-solid" class="tool-btn brush-style-btn active" data-style="solid" title="Классическая ровная кисть">
+            <span class="text-xs">🖌️</span>
+            <span class="text-[11px] font-semibold hidden md:inline">Классика</span>
+          </button>
+          <button id="btn-style-neon" class="tool-btn brush-style-btn" data-style="neon" title="Неоновое свечение (Glow)">
+            <span class="text-xs">⚡</span>
+            <span class="text-[11px] font-semibold hidden md:inline">Неон</span>
+          </button>
+          <button id="btn-style-rainbow" class="tool-btn brush-style-btn" data-style="rainbow" title="Радужная переливающаяся кисть">
+            <span class="text-xs">🌈</span>
+            <span class="text-[11px] font-semibold hidden md:inline">Радуга</span>
+          </button>
+          <button id="btn-style-sparkle" class="tool-btn brush-style-btn" data-style="sparkle" title="Звёздная кисть с искрами">
+            <span class="text-xs">✨</span>
+            <span class="text-[11px] font-semibold hidden md:inline">Искры</span>
+          </button>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Eraser Mode -->
+        <button id="btn-eraser" class="tool-btn icon-only" title="Ластик (стирает штрихи)">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/>
+            <path d="M22 21H7"/>
+            <path d="m5 11 9 9"/>
+          </svg>
+          <span class="sr-only">Ластик</span>
+        </button>
+
+        <div class="divider"></div>
+
+        <!-- Brush Sizes (5 levels: 2px, 5px, 10px, 18px, 30px) + fine slider -->
+        <div class="tool-section brush-sizes-group">
+          <button id="btn-size-2" class="tool-btn icon-only brush-size-btn" data-size="2" title="Ультратонкая кисть (2px)">
+            <span class="brush-preview-dot w-1 h-1"></span>
+            <span class="text-[10px] ml-1 font-medium">2</span>
+          </button>
+          <button id="btn-size-5" class="tool-btn icon-only brush-size-btn active" data-size="5" title="Обычная кисть (5px)">
+            <span class="brush-preview-dot w-2 h-2"></span>
+            <span class="text-[10px] ml-1 font-medium">5</span>
+          </button>
+          <button id="btn-size-10" class="tool-btn icon-only brush-size-btn" data-size="10" title="Средняя кисть (10px)">
+            <span class="brush-preview-dot w-3 h-3"></span>
+            <span class="text-[10px] ml-1 font-medium">10</span>
+          </button>
+          <button id="btn-size-18" class="tool-btn icon-only brush-size-btn" data-size="18" title="Большая кисть (18px)">
+            <span class="brush-preview-dot w-4 h-4"></span>
+            <span class="text-[10px] ml-1 font-medium">18</span>
+          </button>
+          <button id="btn-size-30" class="tool-btn icon-only brush-size-btn" data-size="30" title="Маркер (30px)">
+            <span class="brush-preview-dot w-5 h-5"></span>
+            <span class="text-[10px] ml-1 font-medium">30</span>
+          </button>
+
+          <div class="brush-slider-wrap">
+            <input type="range" id="brush-size-slider" min="1" max="50" value="5" class="brush-slider" title="Плавная регулировка толщины кисти (1–50px)" />
+            <span id="brush-size-display" class="brush-size-display">5px</span>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Canvas Actions -->
+        <div class="tool-section actions-group">
+          <!-- Undo Button -->
+          <button id="btn-undo" class="tool-btn icon-only" title="Отменить последнее действие (🖕 или Ctrl+Z)">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 7v6h6"/>
+              <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>
+            </svg>
+            <span class="sr-only">Отменить</span>
+          </button>
+
+          <!-- Redo Button -->
+          <button id="btn-redo" class="tool-btn icon-only" title="Повторить отменённое действие (Ctrl+Y)">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 7v6h-6"/>
+              <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/>
+            </svg>
+            <span class="sr-only">Повторить</span>
+          </button>
+
+          <button id="btn-clear" class="tool-btn icon-only danger" title="Очистить холст">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18"/>
+              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+              <line x1="10" x2="10" y1="11" y2="17"/>
+              <line x1="14" x2="14" y1="11" y2="17"/>
+            </svg>
+            <span class="sr-only">Очистить</span>
+          </button>
+
+          <!-- Reset Zoom & Pan Button -->
+          <button id="btn-reset-view" class="tool-btn icon-only" title="Сбросить масштаб и положение (1:1)">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              <line x1="8" y1="11" x2="14" y2="11"/>
+            </svg>
+            <span class="sr-only">Сброс вида</span>
+          </button>
+
+          <button id="btn-save" class="tool-btn icon-only" title="Сохранить рисунок в PNG">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" x2="12" y1="15" y2="3"/>
+            </svg>
+            <span class="sr-only">Скачать</span>
+          </button>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Hide Toolbar Button -->
+        <button id="btn-hide-toolbar" class="tool-btn icon-only" title="Скрыть инструменты">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m18 15-6-6-6 6"/>
+          </svg>
+          <span class="sr-only">Скрыть инструменты</span>
+        </button>
+      </aside>
+
+      <!-- Expanded Full Color Palette Shelf (30 Colors) -->
+      <div id="full-palette-drawer" class="palette-drawer">
+        <div class="palette-drawer-header">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-indigo-400"></span>
+            <span class="text-xs font-bold text-zinc-200">Большая палитра (30 цветов)</span>
+          </div>
+          <button id="btn-close-palette" class="palette-close-btn" title="Скрыть палитру">✕</button>
+        </div>
+        <div class="palette-grid">
+          <!-- Row 1: Grayscale & Warm hues -->
+          <button class="color-btn active" data-color="#ffffff" title="Белый"><span class="color-dot" style="background-color: #ffffff;"></span></button>
+          <button class="color-btn" data-color="#e4e4e7" title="Светло-серый"><span class="color-dot" style="background-color: #e4e4e7;"></span></button>
+          <button class="color-btn" data-color="#9ca3af" title="Серый"><span class="color-dot" style="background-color: #9ca3af;"></span></button>
+          <button class="color-btn" data-color="#4b5563" title="Тёмно-серый"><span class="color-dot" style="background-color: #4b5563;"></span></button>
+          <button class="color-btn" data-color="#000000" title="Чёрный"><span class="color-dot border border-zinc-700" style="background-color: #000000;"></span></button>
+          <button class="color-btn" data-color="#78350f" title="Коричневый"><span class="color-dot" style="background-color: #78350f;"></span></button>
+          <button class="color-btn" data-color="#b45309" title="Медный"><span class="color-dot" style="background-color: #b45309;"></span></button>
+          <button class="color-btn" data-color="#991b1b" title="Тёмно-красный"><span class="color-dot" style="background-color: #991b1b;"></span></button>
+          <button class="color-btn" data-color="#ef4444" title="Красный"><span class="color-dot" style="background-color: #ef4444;"></span></button>
+          <button class="color-btn" data-color="#f87171" title="Светло-красный"><span class="color-dot" style="background-color: #f87171;"></span></button>
+          <button class="color-btn" data-color="#ea580c" title="Красно-оранжевый"><span class="color-dot" style="background-color: #ea580c;"></span></button>
+          <button class="color-btn" data-color="#f97316" title="Оранжевый"><span class="color-dot" style="background-color: #f97316;"></span></button>
+          <button class="color-btn" data-color="#f59e0b" title="Золотой"><span class="color-dot" style="background-color: #f59e0b;"></span></button>
+          <button class="color-btn" data-color="#eab308" title="Жёлтый"><span class="color-dot" style="background-color: #eab308;"></span></button>
+          <button class="color-btn" data-color="#fef08a" title="Светло-жёлтый"><span class="color-dot" style="background-color: #fef08a;"></span></button>
+
+          <!-- Row 2: Greens, Cyans, Blues, Purples, Pinks -->
+          <button class="color-btn" data-color="#84cc16" title="Салатовый"><span class="color-dot" style="background-color: #84cc16;"></span></button>
+          <button class="color-btn" data-color="#a3e635" title="Лайм"><span class="color-dot" style="background-color: #a3e635;"></span></button>
+          <button class="color-btn" data-color="#10b981" title="Зелёный"><span class="color-dot" style="background-color: #10b981;"></span></button>
+          <button class="color-btn" data-color="#059669" title="Изумрудный"><span class="color-dot" style="background-color: #059669;"></span></button>
+          <button class="color-btn" data-color="#065f46" title="Тёмно-зелёный"><span class="color-dot" style="background-color: #065f46;"></span></button>
+          <button class="color-btn" data-color="#2dd4bf" title="Мятный"><span class="color-dot" style="background-color: #2dd4bf;"></span></button>
+          <button class="color-btn" data-color="#06b6d4" title="Бирюзовый"><span class="color-dot" style="background-color: #06b6d4;"></span></button>
+          <button class="color-btn" data-color="#0ea5e9" title="Голубой"><span class="color-dot" style="background-color: #0ea5e9;"></span></button>
+          <button class="color-btn" data-color="#38bdf8" title="Небесный"><span class="color-dot" style="background-color: #38bdf8;"></span></button>
+          <button class="color-btn" data-color="#2563eb" title="Синий"><span class="color-dot" style="background-color: #2563eb;"></span></button>
+          <button class="color-btn" data-color="#1e3a8a" title="Тёмно-синий"><span class="color-dot" style="background-color: #1e3a8a;"></span></button>
+          <button class="color-btn" data-color="#6366f1" title="Индиго"><span class="color-dot" style="background-color: #6366f1;"></span></button>
+          <button class="color-btn" data-color="#8b5cf6" title="Фиолетовый"><span class="color-dot" style="background-color: #8b5cf6;"></span></button>
+          <button class="color-btn" data-color="#a855f7" title="Пурпурный"><span class="color-dot" style="background-color: #a855f7;"></span></button>
+          <button class="color-btn" data-color="#ec4899" title="Розовый"><span class="color-dot" style="background-color: #ec4899;"></span></button>
+        </div>
+      </div>
+
+      <!-- Floating Button to Show Toolbar when Hidden -->
+      <button id="btn-show-toolbar" class="btn-show-toolbar hidden" title="Показать инструменты">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        <span>Инструменты</span>
+      </button>
+
+      <!-- Hand Telemetry & Skeleton Status HUD -->
+      <aside id="hand-hud" class="hand-hud-panel">
+        <div class="hud-header">
+          <div class="hud-title-wrap">
+            <span class="hud-live-dot"></span>
+            <span class="hud-title">Скелет кисти (21)</span>
+          </div>
+          <span id="hud-handedness" class="hud-badge-hand">Ожидание...</span>
+        </div>
+
+        <!-- Confidence Gauge -->
+        <div class="hud-confidence-row">
+          <div class="flex items-center justify-between text-xs mb-1">
+            <span class="text-zinc-400">Точность (Confidence)</span>
+            <span id="hud-confidence-val" class="font-bold text-indigo-300">0%</span>
+          </div>
+          <div class="hud-bar-track">
+            <div id="hud-confidence-fill" class="hud-bar-fill" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <!-- 5 Fingers Biomechanical States -->
+        <div class="hud-fingers-list">
+          <div class="hud-finger-row" data-finger="thumb">
+            <span class="hud-finger-name">👍 Большой</span>
+            <span id="f-state-thumb" class="hud-finger-state state-wait">—</span>
+          </div>
+          <div class="hud-finger-row" data-finger="index">
+            <span class="hud-finger-name">☝️ Указательный</span>
+            <span id="f-state-index" class="hud-finger-state state-wait">—</span>
+          </div>
+          <div class="hud-finger-row" data-finger="middle">
+            <span class="hud-finger-name">🖕 Средний</span>
+            <span id="f-state-middle" class="hud-finger-state state-wait">—</span>
+          </div>
+          <div class="hud-finger-row" data-finger="ring">
+            <span class="hud-finger-name">💍 Безымянный</span>
+            <span id="f-state-ring" class="hud-finger-state state-wait">—</span>
+          </div>
+          <div class="hud-finger-row" data-finger="pinky">
+            <span class="hud-finger-name">🤙 Мизинец</span>
+            <span id="f-state-pinky" class="hud-finger-state state-wait">—</span>
+          </div>
+        </div>
+
+        <!-- Current Gesture in HUD -->
+        <div class="hud-gesture-footer">
+          <span class="text-xs text-zinc-400">Жест кисти:</span>
+          <span id="hud-gesture-label" class="hud-active-gesture">Ожидание</span>
+        </div>
+      </aside>
+
+      <!-- View Transform Floating Info (shows when canvas is zoomed or moved) -->
+      <div id="view-indicator" class="view-indicator hidden">
+        <span id="view-zoom-text">100%</span>
+        <button id="btn-quick-reset-view" class="view-reset-mini-btn" title="Сбросить">
+          Сброс
+        </button>
+      </div>
+
+      <!-- Bottom Status Banner with Mode Indicator -->
+      <footer class="status-container">
+        <div id="status-pill" class="status-pill">
+          <!-- Gesture Mode Badge -->
+          <div id="gesture-badge" class="gesture-badge">
+            <span id="gesture-badge-emoji">☝️</span>
+            <span id="gesture-badge-title">Курсор</span>
+          </div>
+
+          <div class="status-content">
+            <div class="flex items-center gap-2">
+              <span id="status-dot" class="status-dot dot-idle"></span>
+              <span id="status-text" class="status-text">Включите камеру</span>
+            </div>
+            <span id="status-hint" class="status-hint">Нажмите кнопку «Включить камеру»</span>
+          </div>
+        </div>
+      </footer>
+
+      <!-- Initial Welcome / Camera Prompt Overlay -->
+      <div id="welcome-modal" class="welcome-overlay">
+        <div class="welcome-card">
+          <div class="welcome-badge">
+            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              <span class="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
+              Бесконтактное управление жестами рук
+            </span>
+          </div>
+
+          <h1 class="welcome-title">Рисуйте в воздухе перед веб-камерой</h1>
+          <p class="welcome-desc">
+            Полный контроль приложения только движениями руки без касания мыши или клавиатуры:
+          </p>
+
+          <!-- Gesture Quick Guide (Updated for ☝️+🖕 Drawing) -->
+          <div class="gesture-guide-grid">
+            <div class="guide-item">
+              <div class="guide-icon">☝️</div>
+              <div class="guide-label">Курсор</div>
+              <div class="guide-sub">Один указательный палец</div>
+            </div>
+            <div class="guide-item highlight">
+              <div class="guide-icon">☝️+🖕</div>
+              <div class="guide-label">Рисование</div>
+              <div class="guide-sub">Указательный + средний подняты</div>
+            </div>
+            <div class="guide-item">
+              <div class="guide-icon">✊</div>
+              <div class="guide-label">Перемещение</div>
+              <div class="guide-sub">Сжатый кулак двигает рисунок</div>
+            </div>
+            <div class="guide-item">
+              <div class="guide-icon">🖐️</div>
+              <div class="guide-label">Остановка</div>
+              <div class="guide-sub">Все пальцы раскрыты (пауза)</div>
+            </div>
+            <div class="guide-item">
+              <div class="guide-icon">👌</div>
+              <div class="guide-label">Выбор (OK)</div>
+              <div class="guide-sub">Кольцо подтверждает кнопку</div>
+            </div>
+            <div class="guide-item">
+              <div class="guide-icon">🖕</div>
+              <div class="guide-label">Отмена (Undo)</div>
+              <div class="guide-sub">Только один средний палец</div>
+            </div>
+          </div>
+
+          <!-- Camera Start Button -->
+          <button id="btn-start-camera-hero" class="hero-start-btn">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>
+              <circle cx="12" cy="13" r="3"/>
+            </svg>
+            <span>Включить камеру</span>
+          </button>
+
+          <!-- Permission Error Box (hidden by default) -->
+          <div id="camera-error-box" class="camera-error hidden">
+            <div class="flex items-start gap-2.5 text-left">
+              <svg class="text-rose-400 shrink-0 mt-0.5" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" x2="12" y1="8" y2="12"/>
+                <line x1="12" x2="12.01" y1="16" y2="16"/>
+              </svg>
+              <div>
+                <p id="camera-error-message" class="text-sm font-medium text-rose-300">
+                  Доступ к камере заблокирован.
+                </p>
+                <p class="text-xs text-rose-200/70 mt-1">
+                  Нажмите на значок замка или камеры в адресной строке браузера, выберите «Разрешить» доступ к камере и обновите страницу или нажмите кнопку снова.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Save Options Modal -->
+      <div id="save-modal" class="save-modal-overlay hidden">
+        <div class="save-modal-card">
+          <div class="save-modal-header">
+            <h3 class="text-base font-bold text-white flex items-center gap-2">
+              <span>💾</span> Сохранение рисунка
+            </h3>
+            <button id="btn-close-save-modal" class="palette-close-btn" title="Закрыть">✕</button>
+          </div>
+          <p class="text-xs text-zinc-400 mb-4">
+            Выберите желаемый формат для мгновенного скачивания файла:
+          </p>
+          <div class="save-options-grid">
+            <button id="btn-save-black" class="save-opt-btn">
+              <div class="save-opt-icon bg-zinc-950 border border-zinc-700">🖤</div>
+              <div class="text-left">
+                <div class="text-sm font-semibold text-white">Чёрный фон (PNG)</div>
+                <div class="text-xs text-zinc-400">Идеально для неоновых линий на контрастном глубоком фоне</div>
+              </div>
+            </button>
+            <button id="btn-save-transparent" class="save-opt-btn">
+              <div class="save-opt-icon bg-zinc-900 border border-dashed border-zinc-600">🏁</div>
+              <div class="text-left">
+                <div class="text-sm font-semibold text-white">Прозрачный PNG</div>
+                <div class="text-xs text-zinc-400">Только ваши штрихи без фона для стикеров и монтажа</div>
+              </div>
+            </button>
+            <button id="btn-save-photo" class="save-opt-btn">
+              <div class="save-opt-icon bg-indigo-950/80 border border-indigo-500/50 text-indigo-400">📸</div>
+              <div class="text-left">
+                <div class="text-sm font-semibold text-white">Фото с камеры + рисунок</div>
+                <div class="text-xs text-zinc-400">Сохраняет вас в кадре вместе с воздушным граффити!</div>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Interactive Gesture Cheatsheet Modal -->
+      <div id="cheatsheet-modal" class="cheatsheet-overlay hidden">
+        <div class="cheatsheet-card">
+          <div class="cheatsheet-header">
+            <h2 class="text-base font-bold text-white flex items-center gap-2">
+              <span>🖐️</span> Шпаргалка управления жестами
+            </h2>
+            <button id="btn-close-cheatsheet" class="palette-close-btn" title="Закрыть">✕</button>
+          </div>
+          <div class="cheatsheet-grid">
+            <div class="cheatsheet-item" data-cheat-gesture="cursor">
+              <div class="text-2xl">☝️</div>
+              <div>
+                <div class="font-bold text-white text-sm">Указательный палец — Курсор</div>
+                <div class="text-xs text-zinc-400">Наведение на холст и кнопки. Удерживайте палец 0.7с над кнопкой для воздушного автоклика!</div>
+              </div>
+            </div>
+            <div class="cheatsheet-item highlight" data-cheat-gesture="draw">
+              <div class="text-2xl">☝️+🖕</div>
+              <div>
+                <div class="font-bold text-emerald-400 text-sm">Указательный + Средний — Рисование</div>
+                <div class="text-xs text-emerald-300/80">Оба пальца подняты вверх. Линия рисуется плавно в точке между ними.</div>
+              </div>
+            </div>
+            <div class="cheatsheet-item" data-cheat-gesture="move">
+              <div class="text-2xl">✊</div>
+              <div>
+                <div class="font-bold text-amber-400 text-sm">Сжатый кулак — Перемещение</div>
+                <div class="text-xs text-zinc-400">Двигайте рисунок по холсту с защитой от резких скачков.</div>
+              </div>
+            </div>
+            <div class="cheatsheet-item" data-cheat-gesture="wait">
+              <div class="text-2xl">🖐️</div>
+              <div>
+                <div class="font-bold text-zinc-300 text-sm">Раскрытая ладонь — Остановка</div>
+                <div class="text-xs text-zinc-400">Пауза, рисование и перемещение выключены.</div>
+              </div>
+            </div>
+            <div class="cheatsheet-item" data-cheat-gesture="ok">
+              <div class="text-2xl">👌</div>
+              <div>
+                <div class="font-bold text-indigo-400 text-sm">Жест «OK» — Выбор инструмента</div>
+                <div class="text-xs text-zinc-400">Мгновенный клик по кнопке или цвету под пальцем.</div>
+              </div>
+            </div>
+            <div class="cheatsheet-item" data-cheat-gesture="undo">
+              <div class="text-2xl">🖕</div>
+              <div>
+                <div class="font-bold text-purple-400 text-sm">Один средний палец — Отмена (Undo)</div>
+                <div class="text-xs text-zinc-400">Удаляет последний штрих (с защитой от повторов 1 сек).</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Application Logic -->
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

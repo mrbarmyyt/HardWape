@@ -1,0 +1,6 @@
+{
+  "name": "HandDraw",
+  "description": "Интерактивное веб-приложение для рисования жестами через веб-камеру с помощью MediaPipe Hands и Canvas API.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
